@@ -1,9 +1,0 @@
-fastapi
-uvicorn
-httpx
-pydantic
-qdrant-client
-python-dotenv
-strands-agents
-ollama
-anthropic
