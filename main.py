@@ -1,19 +1,19 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-from agents.orchestrator import run as orchestrate
+# from fastapi import FastAPI
+# from pydantic import BaseModel
+# from agents.orchestrator import run as orchestrate
 
-app = FastAPI(title="TravelStack AI")
-
-
-class ChatRequest(BaseModel):
-    query: str
+# app = FastAPI(title="TravelStack AI")
 
 
-@app.get("/")
-def root():
-    return {"message": "TravelStack AI running"}
+# class ChatRequest(BaseModel):
+#     query: str
 
 
-@app.post("/chat")
-def chat(request: ChatRequest):
-    return {"response": orchestrate(request.query)}
+# @app.get("/")
+# def root():
+#     return {"message": "TravelStack AI running"}
+
+
+# @app.post("/chat")
+# def chat(request: ChatRequest):
+#     return {"response": orchestrate(request.query)}

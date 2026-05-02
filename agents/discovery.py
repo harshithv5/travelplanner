@@ -2,7 +2,11 @@ from strands import Agent
 from strands.models.ollama import OllamaModel
 from tools_source.geocode import geocode
 from tools_source.routes import route
+from langfuse import get_client
+from dotenv import load_dotenv
+load_dotenv
 
+langfuse = get_client()
 SYSTEM_PROMPT = """You are the TravelStack Discovery Agent — a specialist in destination research and route planning.
 
 ## Your responsibilities
@@ -29,10 +33,15 @@ discovery_agent = Agent(
     system_prompt=SYSTEM_PROMPT,
 )
 
-
 def run(destination_query: str) -> str:
-    return str(discovery_agent(destination_query))
-
-
+    with langfuse.start_as_current_observation(
+        as_type="span",
+        name="discovery-agent",
+        input={"query": destination_query}
+    ) as span:
+        result = discovery_agent(destination_query)
+        span.update(output=str(result))
+        langfuse.flush()
+        return str(result)
 
 print(run(destination_query="Discover places for jaipur"))
