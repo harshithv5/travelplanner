@@ -52,6 +52,42 @@ def clear_session() -> None:
     _call_tracker.clear()
 
 
+def _parse_summarizer_output(city: str, category: str, raw_results: list) -> tuple[list, str]:
+    if not raw_results:
+        return [], f"No results for '{category}' in {city}."
+
+    raw = "\n---\n".join(
+        f"Title: {r['title']}\nSnippet: {r['content'][:400]}\nURL: {r['url']}"
+        for r in raw_results
+    )
+    prompt = (
+        f"Extract specific named places from these travel articles about '{category}' in {city}.\n"
+        f"Return a JSON object with a single key 'places' containing an array of objects.\n"
+        f"Each object must have: place (string), description (one sentence), url (string).\n"
+        f"Rules: real place names only (not article titles), max 5 entries.\n\n"
+        f"{raw}"
+    )
+
+    result = summarize_tool_output(
+        prompt=prompt,
+        generation_config={"max_tokens": 400, "response_format": {"type": "json_object"}},
+    )
+
+    places = result.get("places", []) if isinstance(result, dict) else []
+
+    if not places:
+        places = [
+            {"place": r["title"], "description": r["content"][:150], "url": r["url"]}
+            for r in raw_results
+        ]
+
+    summary = (
+        f"[{category} | {city}] {len(places)} places found: "
+        + ", ".join(p["place"] for p in places)
+    )
+    return places, summary
+
+
 async def _search(city: str, category: str, max_results: int) -> list:
     query_fn = SEARCH_QUERIES.get(category)
     query = query_fn(city) if query_fn else f"{category} in {city}"
@@ -82,7 +118,9 @@ def places(city: str, category: str, max_results: int = 3) -> str:
 
     raw_results = asyncio.run(_search(city=city, category=category, max_results=max_results))
 
-    summarized = summarize_tool_output(city=city, category=category, results=raw_results)
+    extracted_places, summary = _parse_summarizer_output(
+        city=city, category=category, raw_results=raw_results
+    )
 
     _tool_call_store.append({
         "call_index":       call_index,
@@ -91,16 +129,16 @@ def places(city: str, category: str, max_results: int = 3) -> str:
         "max_results":      max_results,
         "timestamp":        datetime.now().isoformat(timespec="seconds"),
         "raw_results":      raw_results,
-        "extracted_places": summarized["places"],
+        "extracted_places": extracted_places,
     })
 
     _call_tracker.append({
-        "call_index":          call_index,
-        "city":                city,
-        "category":            category,
-        "raw_count":           len(raw_results),
-        "extracted_count":     len(summarized["places"]),
-        "timestamp":           datetime.now().isoformat(timespec="seconds"),
+        "call_index":      call_index,
+        "city":            city,
+        "category":        category,
+        "raw_count":       len(raw_results),
+        "extracted_count": len(extracted_places),
+        "timestamp":       datetime.now().isoformat(timespec="seconds"),
     })
 
-    return summarized["summary"]
+    return summary

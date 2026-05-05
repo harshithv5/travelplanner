@@ -69,66 +69,60 @@ mistral_json = MistralModel(
 )
 
 # ---------------------------------------------------------------------------
-# Summarizer — lightweight local model to compress Tavily results before
+# Summarizer — lightweight local model to compress tool outputs before
 # passing them to the main LLM, keeping the context window lean.
+# Uses raw httpx so calls are never picked up by Langfuse instrumentation.
 # ---------------------------------------------------------------------------
-_summarizer_client = OpenAI(
-    base_url="http://localhost:11434/v1",
-    api_key="ollama"
-)
+_SUMMARIZER_URL = "http://localhost:11434/v1/chat/completions"
 
-def summarize_tool_output(city: str, category: str, results: list) -> dict:
+_DEFAULT_GENERATION_CONFIG = {
+    "model":           "qwen3:0.6b",
+    "max_tokens":      400,
+    "temperature":     0.1,
+    "response_format": {"type": "text"},
+    "num_ctx":         4096,
+}
+
+def summarize_tool_output(prompt: str, generation_config: dict = None) -> str | dict:
     """
-    Compress raw Tavily results with qwen3:0.6b.
+    Run a prompt through the local summarizer model.
+
+    Args:
+        prompt:            The prompt to send to the model.
+        generation_config: Optional overrides — model, max_tokens, temperature,
+                           response_format ({"type": "text"} or {"type": "json_object"}).
 
     Returns:
-        {
-          "summary": compact text for the main LLM context,
-          "places":  [{place, description, url}]  — structured extracted entries
-        }
+        Parsed dict if response_format is json_object, otherwise raw text string.
+        Returns "" / {} on failure.
     """
-    if not results:
-        return {"summary": f"No results for '{category}' in {city}.", "places": []}
+    import json
+    import httpx
 
-    raw = "\n---\n".join(
-        f"Title: {r['title']}\nSnippet: {r['content'][:400]}\nURL: {r['url']}"
-        for r in results
-    )
+    config = {**_DEFAULT_GENERATION_CONFIG, **(generation_config or {})}
+    is_json = config["response_format"].get("type") == "json_object"
 
-    prompt = (
-        f"Extract specific named places from these travel articles about '{category}' in {city}.\n"
-        f"For each place output exactly: PLACE | one-sentence reason to visit | source URL\n"
-        f"Rules: real place names only (not article titles), max 5 places, one per line.\n\n"
-        f"{raw}\n\nFormat: PLACE | DESCRIPTION | URL"
-    )
+    payload = {
+        "model":       config["model"],
+        "messages":    [{"role": "user", "content": prompt}],
+        "max_tokens":  config["max_tokens"],
+        "temperature": config["temperature"],
+        "options":     {"num_ctx": config["num_ctx"]},
+        "stream":      False,
+    }
+    if is_json:
+        payload["response_format"] = {"type": "json_object"}
 
     try:
-        resp = _summarizer_client.chat.completions.create(
-            model="qwen3:0.6b",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=400,
-            temperature=0.1
-        )
-        text = resp.choices[0].message.content.strip()
+        with httpx.Client(timeout=60) as client:
+            resp = client.post(
+                _SUMMARIZER_URL,
+                json=payload,
+                headers={"Authorization": "Bearer ollama"},
+            )
+        text = resp.json()["choices"][0]["message"]["content"].strip()
+        if is_json:
+            return json.loads(text)
+        return text
     except Exception:
-        text = ""
-
-    places = []
-    for line in text.splitlines():
-        parts = [p.strip() for p in line.split("|")]
-        if len(parts) == 3 and parts[0] and not parts[0].startswith(("#", "-", "*")):
-            url = parts[2] if parts[2].startswith("http") else results[0]["url"]
-            places.append({"place": parts[0], "description": parts[1], "url": url})
-
-    # Fallback: parsing failed — use raw titles so we never lose data
-    if not places:
-        places = [
-            {"place": r["title"], "description": r["content"][:150], "url": r["url"]}
-            for r in results
-        ]
-
-    summary = (
-        f"[{category} | {city}] {len(places)} places found: "
-        + ", ".join(p["place"] for p in places)
-    )
-    return {"summary": summary, "places": places}
+        return {} if is_json else ""
