@@ -127,4 +127,7 @@ def fetch_places(lat: float, lng: float) -> dict:
     """
     raw = asyncio.run(_get_places_osm(lat=lat, lng=lng, radius_m=_SEARCH_RADIUS_M))
     compact = _summarize(raw)
+    for p in compact:
+        if p["id"] in _place_store:
+            _place_store[p["id"]]["description"] = p.get("description", "")
     return {"total": len(compact), "places": compact}
