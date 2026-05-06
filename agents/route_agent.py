@@ -155,15 +155,15 @@ _TEST_PLACES = [
     {"id": "p4", "name": "Mawsynram",                 "category": "attraction", "lat": 25.2988198, "lng": 91.5824514},
     {"id": "p5", "name": "Don Bosco Square",          "category": "historic",   "lat": 25.5698816, "lng": 91.8935312},
     {"id": "p6", "name": "Sualkuchi",                 "category": "attraction", "lat": 26.1699129, "lng": 91.5708517},
-    {"id": "p7", "name": "Assam State Museum",        "category": "museum",     "lat": 26.1852883, "lng": 91.752382},
-    {"id": "p8", "name": "Guwahati Planetarium",      "category": "museum",     "lat": 26.1914795, "lng": 91.7519783},
+    # {"id": "p7", "name": "Assam State Museum",        "category": "museum",     "lat": 26.1852883, "lng": 91.752382},
+    # {"id": "p8", "name": "Guwahati Planetarium",      "category": "museum",     "lat": 26.1914795, "lng": 91.7519783},
 ]
 
 _TEST_HOTELS = [
     {"day": 1, "name": "Polo Orchid Resort", "lat": 25.2780, "lng": 91.7300},
     {"day": 2, "name": "Hotel Ri Kynjai",    "lat": 25.5740, "lng": 91.8820},
     {"day": 3, "name": "Vivanta Guwahati",   "lat": 26.1900, "lng": 91.7520},
-    # Day 4 has no hotel → treated as end-of-trip, no return leg
+    # Day 4 has no hotel → treated as end-of-trip, no return leg    
 ]
 
 print(json.dumps(
