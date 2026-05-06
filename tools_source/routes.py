@@ -3,47 +3,41 @@ import os
 import httpx
 from strands import tool
 
-from tools_source.geocode import get_coordinates
-
 ORS_API_KEY = os.getenv("ORS_API_KEY", "")
 
 
-async def get_route(origin: str, destination: str) -> dict:
-    origin_coords = await get_coordinates(origin)
-    dest_coords = await get_coordinates(destination)
-
+async def _get_route(origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float) -> dict:
     url = "https://api.openrouteservice.org/v2/directions/driving-car/geojson"
     headers = {"Authorization": ORS_API_KEY, "Content-Type": "application/json"}
     body = {
         "coordinates": [
-            [origin_coords["lng"], origin_coords["lat"]],
-            [dest_coords["lng"], dest_coords["lat"]],
+            [origin_lng, origin_lat],
+            [dest_lng, dest_lat],
         ]
     }
     async with httpx.AsyncClient() as client:
         response = await client.post(url, json=body, headers=headers)
         data = response.json()
 
-    coordinates = data["features"][0]["geometry"]["coordinates"]
     summary = data["features"][0]["properties"]["summary"]
     return {
-        "coordinates": coordinates,
-        "distance_km": round(summary["distance"] / 1000, 2),
+        "distance_km":   round(summary["distance"] / 1000, 2),
         "duration_mins": round(summary["duration"] / 60, 2),
     }
 
 
 @tool
-def route(origin: str, destination: str) -> dict:
+def route(origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float) -> dict:
     """
-    Get the driving route between two places, including road distance and travel time.
-    Use this whenever the user asks about travelling between two locations.
+    Get the driving route between two locations using their coordinates.
 
     Args:
-        origin: Starting city or place name.
-        destination: Ending city or place name.
+        origin_lat: Latitude of the starting location.
+        origin_lng: Longitude of the starting location.
+        dest_lat:   Latitude of the destination.
+        dest_lng:   Longitude of the destination.
 
     Returns:
-        A dict with keys: coordinates (list), distance_km (float), duration_mins (float).
+        A dict with keys: distance_km (float), duration_mins (float).
     """
-    return asyncio.run(get_route(origin, destination))
+    return asyncio.run(_get_route(origin_lat, origin_lng, dest_lat, dest_lng))

@@ -18,6 +18,7 @@ SYSTEM_PROMPT = """You are the TravelStack Discovery Agent — a specialist in u
    - If the user has no specific preference → return all IDs.
    - If the user mentions specific interests (e.g. waterfalls, museums, food, historic) → return only IDs whose name or category match that interest.
 4. Return your final answer as a JSON array of the selected IDs:
+5. If you see invalid names of the places u can remove those from the list
 ["p1", "p4", "p7"]
 
 Rules:
@@ -61,4 +62,4 @@ def run(destination_query: str) -> list[dict]:
         return places
 
 
-print(json.dumps(run(destination_query="What are the places in meghalaya and i prefer water falls "), indent=2))
+print(json.dumps(run(destination_query="What are the places in meghalaya "), indent=2))
