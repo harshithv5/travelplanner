@@ -62,4 +62,4 @@ def run(destination_query: str) -> list[dict]:
         return places
 
 
-print(json.dumps(run(destination_query="What are the places in meghalaya "), indent=2))
+# print(json.dumps(run(destination_query="What are the places in meghalaya "), indent=2))
