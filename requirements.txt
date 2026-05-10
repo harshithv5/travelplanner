@@ -7,3 +7,6 @@ python-dotenv
 strands-agents
 ollama
 anthropic
+upstash-redis
+sqlalchemy
+psycopg2-binary

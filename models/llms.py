@@ -83,7 +83,7 @@ _DEFAULT_GENERATION_CONFIG = {
     "num_ctx":         4096,
 }
 
-def summarize_tool_output(prompt: str, generation_config: dict = None) -> str | dict:
+def summarize_tool_output(prompt: str, generation_config: dict) -> str | dict:
     """
     Run a prompt through the local summarizer model.
 

@@ -1,41 +1,122 @@
 import os
-import uuid
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
+from datetime import datetime, timezone
+from sqlalchemy import (
+    Column, Integer, String, Text, DateTime,
+    create_engine, desc,
+)
+from sqlalchemy.orm import DeclarativeBase, Session
 
-COLLECTION = "episodic_memory"
+
+# ---------------------------------------------------------------------------
+# Engine
+# ---------------------------------------------------------------------------
+
+def _engine():
+    url = os.getenv("DATABASE_URL", "")
+    return create_engine(url, pool_pre_ping=True)
 
 
-class EpisodicMemory:
-    def __init__(self):
-        self.client = QdrantClient(
-            url=os.getenv("QDRANT_URL"),
-            api_key=os.getenv("QDRANT_API_KEY"),
+engine = _engine()
+
+
+# ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
+
+class Base(DeclarativeBase):
+    pass
+
+
+class UserPreference(Base):
+    __tablename__ = "user_preferences"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    user_id    = Column(String(128), nullable=False, index=True)
+    preference = Column(Text, nullable=False)
+
+
+class ConversationMemory(Base):
+    __tablename__ = "conversation_memory"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    user_id         = Column(String(128), nullable=False, index=True)
+    session_id      = Column(String(128), nullable=False, index=True)
+    user_question   = Column(Text, nullable=False)
+    system_response = Column(Text, nullable=False)
+    timestamp       = Column(DateTime(timezone=True), nullable=False,
+                             default=lambda: datetime.now(timezone.utc))
+
+
+# Create tables if they don't exist yet
+Base.metadata.create_all(engine)
+
+
+# ---------------------------------------------------------------------------
+# Write operations
+# ---------------------------------------------------------------------------
+
+def add_user_preference(user_id: str, preference: str) -> UserPreference:
+    """Insert a preference entry for a user."""
+    with Session(engine) as session:
+        row = UserPreference(user_id=user_id, preference=preference)
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row
+
+
+def save_conversation(
+    user_id: str,
+    session_id: str,
+    user_question: str,
+    system_response: str,
+) -> ConversationMemory:
+    """Append a conversation turn to the history."""
+    with Session(engine) as session:
+        row = ConversationMemory(
+            user_id=user_id,
+            session_id=session_id,
+            user_question=user_question,
+            system_response=system_response,
         )
-        self._ensure_collection()
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row
 
-    def _ensure_collection(self):
-        existing = {c.name for c in self.client.get_collections().collections}
-        if COLLECTION not in existing:
-            self.client.create_collection(
-                collection_name=COLLECTION,
-                vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
+
+# ---------------------------------------------------------------------------
+# Read operations
+# ---------------------------------------------------------------------------
+
+def get_user_preferences(user_id: str) -> list[UserPreference]:
+    """Return all preference entries for a user."""
+    with Session(engine) as session:
+        return (
+            session.query(UserPreference)
+            .filter(UserPreference.user_id == user_id)
+            .all()
+        )
+
+
+def get_conversations(
+    user_id: str,
+    session_id: str,
+    limit: int = 20,
+) -> list[ConversationMemory]:
+    """
+    Return the most recent `limit` conversation turns for a user+session,
+    ordered oldest-first so they read naturally.
+    """
+    with Session(engine) as session:
+        rows = (
+            session.query(ConversationMemory)
+            .filter(
+                ConversationMemory.user_id   == user_id,
+                ConversationMemory.session_id == session_id,
             )
-
-    def store(self, trip_id: str, summary: str, vector: list):
-        self.client.upsert(
-            collection_name=COLLECTION,
-            points=[
-                PointStruct(
-                    id=str(uuid.uuid4()),
-                    vector=vector,
-                    payload={"trip_id": trip_id, "summary": summary},
-                )
-            ],
+            .order_by(desc(ConversationMemory.timestamp))
+            .limit(limit)
+            .all()
         )
-
-    def search(self, query_vector: list, top_k: int = 3) -> list:
-        results = self.client.search(
-            collection_name=COLLECTION, query_vector=query_vector, limit=top_k
-        )
-        return [r.payload for r in results]
+        return list(reversed(rows))
