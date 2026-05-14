@@ -16,13 +16,14 @@ ollama = OllamaModel(
 )
 
 # --- Groq via OpenAI-compatible client ---
-_groq_client = OpenAI(
+GROQ_MODEL_ID = "llama-3.3-70b-versatile"
+groq_client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
     api_key=os.getenv("GROQ_API_KEY")
 )
 groq = OpenAIModel(
-    client=_groq_client,
-    model_id="llama-3.3-70b-versatile",
+    client=groq_client,
+    model_id=GROQ_MODEL_ID,
     params={
         "temperature": 0.3,
         "max_tokens": 1024

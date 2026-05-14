@@ -5,19 +5,19 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from memory.session_memory import RedisSessionHandler
-from memory.pg_memory import save_conversation, add_user_preference
+from memory.episodic import save_conversation, add_user_preference
 from agents.orchestrator import run as run_orchestrator
 
 load_dotenv()
 
 # ---------------------------------------------------------------------------
-# Cerebras client (direct OpenAI-compatible, no Strands)
+# Groq client (direct OpenAI-compatible, no Strands)
 # ---------------------------------------------------------------------------
-_cerebras = OpenAI(
-    api_key=os.getenv("CEREBRAS_API_KEY", ""),
-    base_url="https://api.cerebras.ai/v1",
+_groq = OpenAI(
+    api_key=os.getenv("GROQ_API_KEY", ""),
+    base_url="https://api.groq.com/openai/v1",
 )
-_MODEL = "llama-3.3-70b"
+_MODEL = "llama-3.3-70b-versatile"
 
 # ---------------------------------------------------------------------------
 # Redis handler (singleton for the process)
@@ -161,7 +161,7 @@ def run_user_query(user_id: str, session_id: str, user_query: str) -> str:
 
     Flow:
       1. Load session state from Redis.
-      2. Inject state into the Cerebras prompt.
+      2. Inject state into the Groq prompt.
       3. Parse {session, response, user_preference} from the LLM reply.
       4. Update Redis with new session fields.
       5. Persist user_preference to Postgres if detected.
@@ -177,11 +177,11 @@ def run_user_query(user_id: str, session_id: str, user_query: str) -> str:
     # 1 — Load current session state from Redis
     current_session: dict = _redis.get(user_session_id) or {}
 
-    # 2 — Build context-aware prompt and call Cerebras
+    # 2 — Build context-aware prompt and call Groq
     context_block     = _build_context_block(current_session)
     augmented_message = f"{context_block}\n\nUser message: {user_query}"
 
-    completion = _cerebras.chat.completions.create(
+    completion = _groq.chat.completions.create(
         model=_MODEL,
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},

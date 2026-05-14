@@ -12,6 +12,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from agents.orchestrator import run as orchestrate
+from service.service import run_user_query
+from memory.episodic import engine, Base
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -33,6 +35,10 @@ async def lifespan(app: FastAPI):
     logger.info("TravelStack AI — starting up")
     logger.info("=" * 60)
 
+    # Create Postgres tables if they don't exist
+    Base.metadata.create_all(engine)
+    logger.info("Postgres tables: OK")
+
     required_envs = ["MISTRAL_API_KEY", "ORS_API_KEY", "RAPIDAPI_KEY"]
     for key in required_envs:
         present = bool(os.getenv(key))
@@ -41,6 +47,7 @@ async def lifespan(app: FastAPI):
     optional_envs = [
         "GROQ_API_KEY", "GEMINI_API_KEY", "CEREBRAS_API_KEY",
         "TAVILY_API_KEY",
+        "DATABASE_URL", "UPSTASH_REDIS_REST_URL",
         "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST",
     ]
     for key in optional_envs:
@@ -86,6 +93,17 @@ class ChatResponse(BaseModel):
     elapsed_ms: int
 
 
+class SessionChatRequest(BaseModel):
+    user_id: str = Field(..., min_length=1, description="Stable user identifier.")
+    session_id: str = Field(..., min_length=1, description="Current session identifier.")
+    query: str = Field(..., min_length=1, description="User's message.")
+
+
+class SessionChatResponse(BaseModel):
+    response: str
+    elapsed_ms: int
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -107,9 +125,8 @@ def health():
 @app.post("/chat", response_model=ChatResponse)
 def chat(request: ChatRequest) -> ChatResponse:
     """
-    Send a natural-language travel planning request to the orchestrator agent.
-    The agent gathers info, runs discovery + hotel search in parallel, and plans
-    the day-wise route.
+    Direct orchestrator endpoint — send a fully-formed travel planning request
+    and receive the complete itinerary. No session management.
     """
     started = time.time()
     logger.info(f"/chat <- {request.query[:120]}{'...' if len(request.query) > 120 else ''}")
@@ -126,9 +143,35 @@ def chat(request: ChatRequest) -> ChatResponse:
     return ChatResponse(response=response_text, elapsed_ms=elapsed_ms)
 
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
+@app.post("/session/chat", response_model=SessionChatResponse)
+def session_chat(request: SessionChatRequest) -> SessionChatResponse:
+    """
+    Conversational session endpoint. Gathers trip details turn-by-turn,
+    persists state in Redis, and automatically invokes the orchestrator
+    once all required information has been collected.
+    """
+    started = time.time()
+    logger.info(
+        f"/session/chat <- user={request.user_id} session={request.session_id} "
+        f"query={request.query[:80]}{'...' if len(request.query) > 80 else ''}"
+    )
+
+    try:
+        response_text = run_user_query(
+            user_id=request.user_id,
+            session_id=request.session_id,
+            user_query=request.query,
+        )
+    except Exception as exc:
+        logger.exception("session chat failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    elapsed_ms = int((time.time() - started) * 1000)
+    logger.info(f"/session/chat -> {elapsed_ms}ms")
+
+    return SessionChatResponse(response=response_text, elapsed_ms=elapsed_ms)
+
+
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",

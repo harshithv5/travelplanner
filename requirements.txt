@@ -3,6 +3,7 @@ uvicorn
 httpx
 pydantic
 qdrant-client
+fastembed
 python-dotenv
 strands-agents
 ollama

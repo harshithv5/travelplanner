@@ -1,65 +1,69 @@
 import json
+import re
 from strands import Agent
-from models import mistral  # swap: ollama | groq | groq_litellm | gemini | mistral | mistral_json | cerebras
+from models.llms import mistral  # swap: ollama | groq | groq_litellm | gemini | mistral | mistral_json | cerebras
 from tools_source.geocode import geocode
-from tools_source.fetch_places import fetch_places, reset_session, get_stored_places
+from tools_source.fetch_places import fetch_places
 from langfuse import get_client
 from dotenv import load_dotenv
-load_dotenv()
+from prompts.discovery_agent import SYSTEM_PROMPT
 
+load_dotenv()
 langfuse = get_client()
 
-SYSTEM_PROMPT = """You are the TravelStack Discovery Agent — a specialist in uncovering interesting places for travellers.
 
-## How to work
-1. Call `geocode` exactly once with the user's destination to get lat/lng.
-2. Call `fetch_places` exactly once with those coordinates.
-3. Read the user's request carefully and decide which IDs to return:
-   - If the user has no specific preference → return all IDs.
-   - If the user mentions specific interests (e.g. waterfalls, museums, food, historic) → return only IDs whose name or category match that interest.
-4. Return your final answer as a JSON array of the selected IDs:
-5. If you see invalid names of the places u can remove those from the list
-["p1", "p4", "p7"]
+def _parse_places(text: str) -> list[dict]:
+    """Extract a JSON array of place objects from the agent's raw output.
 
-Rules:
-- Call each tool only once. Never repeat a tool call.
-- Only use IDs that appear in the fetch_places results.
-- Never fabricate or rename IDs.
-- Do not include any text or markdown outside the JSON array."""
+    Handles plain JSON, ```json ... ``` fences, and stray prose around the array.
+    """
+    if not text:
+        return []
+    fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
+    candidates = []
+    if fenced:
+        candidates.append(fenced.group(1).strip())
+    candidates.append(text.strip())
+    bracket = re.search(r"\[.*\]", text, re.DOTALL)
+    if bracket:
+        candidates.append(bracket.group(0))
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(parsed, list):
+            return [p for p in parsed if isinstance(p, dict)]
+        if isinstance(parsed, dict) and isinstance(parsed.get("places"), list):
+            return [p for p in parsed["places"] if isinstance(p, dict)]
+    return []
+
 
 discovery_agent = Agent(
-    model=mistral,  # swap: ollama | groq | groq_litellm | gemini | mistral | mistral_json | cerebras
+    model=mistral,
     tools=[geocode, fetch_places],
     system_prompt=SYSTEM_PROMPT,
 )
 
 
-def _expand_ids(raw_output: str) -> list[dict]:
-    """Parse selected IDs from agent output and expand to full place objects."""
-    store = get_stored_places()
-    try:
-        ids = json.loads(raw_output)
-        if isinstance(ids, list):
-            return [store[i] for i in ids if i in store]
-    except (json.JSONDecodeError, TypeError):
-        pass
-    # Fallback: return everything in the store
-    return list(store.values())
-
-
 def run(destination_query: str) -> list[dict]:
-    reset_session()
-
     with langfuse.start_as_current_observation(
         as_type="span",
         name="discovery-agent",
-        input={"query": destination_query}
+        input={"query": destination_query},
     ) as span:
         result = discovery_agent(destination_query)
-        places = _expand_ids(str(result))
+        places = _parse_places(str(result))
         span.update(output={"places": places})
         langfuse.flush()
         return places
 
 
-# print(json.dumps(run(destination_query="What are the places in meghalaya "), indent=2))
+if __name__ == "__main__":
+    sample_input = [
+        {"place": "Ladakh", "user_preference": "", "ideal_count": 5},
+        
+    ]
+    places = run(json.dumps(sample_input))
+    print(f"Returned {len(places)} places:\n")
+    print(json.dumps(places, indent=2))

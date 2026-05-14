@@ -12,7 +12,7 @@ from sqlalchemy.orm import DeclarativeBase, Session
 # ---------------------------------------------------------------------------
 
 def _engine():
-    url = os.getenv("DATABASE_URL", "")
+    url = os.getenv("POSTGRES_CONNECTION_STRING", "")
     return create_engine(url, pool_pre_ping=True)
 
 

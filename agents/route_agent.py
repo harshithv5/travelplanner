@@ -1,6 +1,6 @@
 import json
 from strands import Agent
-from models import mistral  # swap: ollama | groq | groq_litellm | gemini | mistral | mistral_json | cerebras
+from models.llms import mistral  # swap: ollama | groq | groq_litellm | gemini | mistral | mistral_json | cerebras
 from tools_source.routes import route
 from langfuse import get_client
 from dotenv import load_dotenv
